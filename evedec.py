@@ -13,7 +13,7 @@ store_path = ..\
 
 '''
 
-#function executed by each decompilation process
+#function executed by each decompile process
 def process_func(code_q, result_q, blen, store_path, lock):
     okay_files = failed_files = 0
     try:
@@ -62,6 +62,7 @@ def process_func(code_q, result_q, blen, store_path, lock):
     finally:
         result_q.put((okay_files, failed_files))
 
+#executed once by the starting process
 if __name__ == '__main__':
     #moved imports here so that the other processes don't import them unnecessarily
     import sys
