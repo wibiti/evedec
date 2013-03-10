@@ -7,6 +7,8 @@ Reads and decrypts Eve Online python files and passes them to uncompyle2 to deco
 * Uses multiple processes to speed up decompilation.
 
 Expects a evedec.ini file to specify Eve install location and output directory, e.g.:
+```
 [main]
 eve_path = C:\Program Files (x86)\CCP\EVE\
 store_path = ..\
+```
