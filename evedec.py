@@ -227,10 +227,12 @@ if __name__ == '__main__':
         # .ccp is just awesomesauce for .zip
         for root, dirs, files in os.walk(os.path.join(eve_path, 'lib/')):
             for libname in files:
-                if libname[-4:] == '.ccp':
-                    with zipfile.ZipFile(os.path.join(root, libname), 'r') as zf:
-                        for path in zf.namelist():
+                with zipfile.ZipFile(os.path.join(root, libname), 'r') as zf:
+                    for path in zf.namelist():
+                        if path[-4:] == '.pyj':
                             code_queue.put(UnjumbleString(zf.read(path))[8:])
+                        elif path[-4:] == '.pyc':
+                            code_queue.put(zf.read(path)[8:])
 
         #this process is done except for waiting, so add one more decompile process
         p = Process(target=process_func,
