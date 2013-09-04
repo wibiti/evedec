@@ -20,13 +20,12 @@ def process_func(code_q, result_q, blen, store_path, lock):
         import sys, os, marshal, errno, Queue
         import uncompyle2
         while 1:
-            marshalled_code = code_q.get(True, 5) #give up after 5 sec
-            if marshalled_code == None: #None is our end marker
+            filename, marshalled_code = code_q.get(True, 5) #give up after 5 sec
+            if filename == None: #None is our end marker
                 break
             try:
                 code = marshal.loads(marshalled_code)
-                #remove 'c:\depot\games\branches\release\EVE-TRANQUILITY\' prefix
-                filename = code.co_filename[blen+1:]
+                
                 #prepend our store_path
                 filename = os.path.join(store_path, filename)
                 filename = os.path.abspath(filename)
@@ -87,7 +86,7 @@ if __name__ == '__main__':
     
     #use version info from eve's common.ini to create directory name
     eveconfig = ConfigParser()
-    eveconfig.read(os.path.join(eve_path, 'common.ini'))
+    eveconfig.read(os.path.join(eve_path, 'start.ini'))
 
     store_path = os.path.join(config.get('main', 'store_path'), \
       'eve-%s.%s' % (eveconfig.get('main', 'version'), eveconfig.get('main', 'build')))
@@ -144,31 +143,8 @@ if __name__ == '__main__':
         windll.advapi32.CryptImportKey(hProv, keyblob, len(keyblob), 0, 0, byref(hKey))
         keys.append((hKey, blue[keyloc-len(blob_header):keyloc+24], keyblob))
 
-    CryptDecrypt = windll.advapi32.CryptDecrypt
-    def UnjumbleString(s):
-        bData = create_string_buffer(s)
-        bDataLen = c_int(len(s))
-        CryptDecrypt(keys[0][0], 0, True, 0, bData, byref(bDataLen))
-        dec_s = bData.raw[:bDataLen.value] #decrypted string may be shorter, but not longer
-        return zlib.decompress(dec_s)
-    
-    #queue of marshalled code objects
-    code_queue = Queue()
-    #queue of process results
-    result_queue = Queue()
-    
-    #unpickle compiled.code 
-    with open(os.path.join(eve_path, 'script/compiled.code'), 'rb') as compiled_dot_code:
-        magic, all, signature = cPickle.load(compiled_dot_code)
-    
-    #check magic number
-    if magic != int(imp.get_magic()[::-1].encode('hex'), 16):
-        print >> sys.stderr, '###Warning: magic number mismatch, will attempt to continue.'
-        
-    codes = cPickle.loads(all)['code']
-    #test key and switch if necessary and available
-    while 1:
-        simple, plain = keys[0][1], keys[0][2]
+    for key in keys:
+        simple, plain = key[1], key[2]
         print
         print '[                     SIMPLEBLOB (as found in blue.dll)                         ]'
         print '[    publickeystruc   ]'
@@ -192,19 +168,30 @@ if __name__ == '__main__':
               plain[8:12][::-1].encode('hex'),
               plain[12:].encode('hex'))
         print
-            
+
+    CryptDecrypt = windll.advapi32.CryptDecrypt
+
+    def UnjumbleString(s):
         try:
-            UnjumbleString(codes[0][1][0])
-        #if the key is bad, there will probably be a zlib error
+            bData = create_string_buffer(s)
+            bDataLen = c_int(len(s))
+            CryptDecrypt(keys[0][0], 0, True, 0, bData, byref(bDataLen))
+            dec_s = bData.raw[:bDataLen.value] #decrypted string may be shorter, but not longer
+            return zlib.decompress(dec_s)
         except zlib.error:
             print 'Key failed. Attempting key switch.'
             del keys[0]
             if not keys:
                 print >> sys.stderr, '!!! All keys failed. Exiting.'
                 sys.exit(-1)
-        else:
-            print 'Key appears to work; zlib.decompress successful.'
-            break
+            return UnjumbleString(s)
+            
+    
+    #queue of marshalled code objects
+    code_queue = Queue()
+    #queue of process results
+    result_queue = Queue()
+    
     sys.stdout.flush()
         
     try:
@@ -218,21 +205,13 @@ if __name__ == '__main__':
         #start procs now; they will block on empty queue
         for p in procs:
             p.start()
-        
-        #add marshalled code objects to queue. decompile processes are ready and waiting
-        for (filename, type), (encrypted_code, order) in codes:
-            code_queue.put(UnjumbleString(encrypted_code))
-       
-        #carbonlib.ccp, carbonstdlib.ccp, evelib.ccp contain code too
-        # .ccp is just awesomesauce for .zip
-        for root, dirs, files in os.walk(os.path.join(eve_path, 'lib/')):
-            for libname in files:
-                with zipfile.ZipFile(os.path.join(root, libname), 'r') as zf:
-                    for path in zf.namelist():
-                        if path[-4:] == '.pyj':
-                            code_queue.put(UnjumbleString(zf.read(path))[8:])
-                        elif path[-4:] == '.pyc':
-                            code_queue.put(zf.read(path)[8:])
+            
+        with zipfile.ZipFile(os.path.join(eve_path, 'code.ccp'), 'r') as zf:
+            for filename in zf.namelist():
+                if filename[-4:] == '.pyj':
+                    code_queue.put( (filename[:-1], UnjumbleString(zf.read(filename))[8:]) )
+                elif filename[-4:] == '.pyc':
+                    code_queue.put( (filename[:-1], zf.read(filename)[8:]) )
 
         #this process is done except for waiting, so add one more decompile process
         p = Process(target=process_func,
@@ -242,7 +221,7 @@ if __name__ == '__main__':
         
         #add sentinel values to indicate end of queue
         for p in procs:
-            code_queue.put(None)
+            code_queue.put( (None, None) )
 
         #wait for decompile processes to finish
         for p in procs:
