@@ -14,7 +14,7 @@ store_path = ..\
 '''
 
 #function executed by each decompile process
-def process_func(code_q, result_q, blen, store_path, lock):
+def process_func(code_q, result_q, store_path, lock):
     okay_files = failed_files = 0
     try:
         import sys, os, marshal, errno, Queue
@@ -91,9 +91,7 @@ if __name__ == '__main__':
     store_path = os.path.join(config.get('main', 'store_path'), \
       'eve-%s.%s' % (eveconfig.get('main', 'version'), eveconfig.get('main', 'build')))
     store_path = os.path.abspath(store_path)
-    branch_len = len(eveconfig.get('main', 'branch')) #len('//depot/games/branches/release/EVE-TRANQUILITY/eve')
-    branch_len -= 3 #len('//depot/games/branches/release/EVE-TRANQUILITY/')
-    
+
     #search blue.dll for keyblob header
     #yeah, it's really that easy
 
@@ -200,7 +198,7 @@ if __name__ == '__main__':
         print_lock = Lock()
         for i in range(cpu_count()-1): #save one process for decompressing/decrypting
             procs.append(Process(target=process_func,
-                                 args=(code_queue, result_queue, branch_len, store_path, print_lock)));
+                                 args=(code_queue, result_queue, store_path, print_lock)));
             
         #start procs now; they will block on empty queue
         for p in procs:
@@ -215,7 +213,7 @@ if __name__ == '__main__':
 
         #this process is done except for waiting, so add one more decompile process
         p = Process(target=process_func,
-                    args=(code_queue, result_queue, branch_len, store_path, print_lock))
+                    args=(code_queue, result_queue, store_path, print_lock))
         p.start()
         procs.append(p)
         
