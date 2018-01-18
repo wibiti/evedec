@@ -12,3 +12,4 @@ Expects a evedec.ini file to specify Eve install location and output directory, 
 eve_path = C:\Program Files (x86)\CCP\EVE\
 store_path = ..\
 ```
+Still working as of Jan 2018.
