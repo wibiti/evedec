@@ -24,7 +24,7 @@ def process_func(code_q, result_q, store_path, lock):
             if filename == None: #None is our end marker
                 break
             try:
-                code = marshal.loads(marshalled_code)
+                code = marshal.loads(marshalled_code[8:])
                 
                 #prepend our store_path
                 filename = os.path.join(store_path, filename)
@@ -37,6 +37,7 @@ def process_func(code_q, result_q, store_path, lock):
                         raise
                 try:
                     os.remove(filename+'_failed')
+                    os.remove(filename+'c')
                 except OSError as e:
                     if e.errno != errno.ENOENT:
                         raise
@@ -49,6 +50,8 @@ def process_func(code_q, result_q, store_path, lock):
                     print '### Can\'t decompile %s' % filename
                     sys.stdout.flush()
                 os.rename(filename, filename+'_failed')
+                with open(filename+'c', 'wb') as codefile:
+                    codefile.write(marshalled_code)
                 failed_files += 1
             else:
                 with lock:
@@ -171,17 +174,21 @@ if __name__ == '__main__':
 
     def UnjumbleString(s):
         try:
+            if not keys:
+                return zlib.decompress(s)
             bData = create_string_buffer(s)
             bDataLen = c_int(len(s))
             CryptDecrypt(keys[0][0], 0, True, 0, bData, byref(bDataLen))
             dec_s = bData.raw[:bDataLen.value] #decrypted string may be shorter, but not longer
             return zlib.decompress(dec_s)
         except zlib.error:
-            print 'Key failed. Attempting key switch.'
-            del keys[0]
             if not keys:
                 print >> sys.stderr, '!!! All keys failed. Exiting.'
                 sys.exit(-1)
+            print 'Key failed. Attempting key switch.'
+            del keys[0]
+            if not keys:
+                print >> sys.stderr, 'Attempting decompress without decryption.'
             return UnjumbleString(s)
             
     
@@ -207,9 +214,9 @@ if __name__ == '__main__':
         with zipfile.ZipFile(os.path.join(eve_path, 'code.ccp'), 'r') as zf:
             for filename in zf.namelist():
                 if filename[-4:] == '.pyj':
-                    code_queue.put( (filename[:-1], UnjumbleString(zf.read(filename))[8:]) )
+                    code_queue.put( (filename[:-1], UnjumbleString(zf.read(filename))) )
                 elif filename[-4:] == '.pyc':
-                    code_queue.put( (filename[:-1], zf.read(filename)[8:]) )
+                    code_queue.put( (filename[:-1], zf.read(filename)) )
 
         #this process is done except for waiting, so add one more decompile process
         p = Process(target=process_func,
